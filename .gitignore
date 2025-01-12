@@ -30,3 +30,21 @@
 *.exe
 *.out
 *.app
+
+# Build directory
+build/
+
+# CMake specific files
+CMakeFiles/
+cmake_install.cmake
+Makefile
+
+# User-specific files
+CMakeLists.txt.user
+
+# Temporary files (e.g., swap files or logs)
+*.swp
+*.log
+
+# MovieTag bin in package
+MovieTagPackage/bin/MovieTag
