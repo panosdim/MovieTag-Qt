@@ -252,6 +252,7 @@ void MainWindow::onSearchCompleted(const QJsonArray &results)
                             if (pixmap.loadFromData(imageData)) {
                                 itemWidget->setCoverImage(pixmap);
                             } else {
+                                qDebug() << "Failed to load pixmap";
                                 itemWidget->setCoverImage(QPixmap(":images/no-cover.png")); // Optionally set a default image
                             }
                         }
@@ -260,6 +261,7 @@ void MainWindow::onSearchCompleted(const QJsonArray &results)
             // Initiate the poster download
             tmdbClient->downloadMoviePoster(posterPath, this);
         } else {
+            qDebug() << "Poster path not found";
             itemWidget->setCoverImage(QPixmap(":images/no-cover.png")); // Optionally set a default image
         }
     }

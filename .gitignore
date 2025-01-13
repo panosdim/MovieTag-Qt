@@ -16,3 +16,6 @@ CMakeLists.txt.user
 # MovieTag bin in package
 MovieTagPackage/bin
 
+# config.ini
+config.ini
+
