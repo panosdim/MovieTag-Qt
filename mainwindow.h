@@ -33,7 +33,7 @@ private:
     enum class MessageType {
         Error,
         Warning,
-        Normal
+        Info
     };
 
     // Function to read the configuration file

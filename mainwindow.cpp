@@ -1,6 +1,7 @@
 #include "mainwindow.h"
 #include "ui_mainwindow.h"
 #include "movieitemwidget.h"
+#include "mediatagwriter.h"
 #include <QFileDialog>
 #include <QString>
 #include <QFile>
@@ -39,7 +40,7 @@ MainWindow::MainWindow(QWidget *parent)
         );
 
     // Initial status message
-    showMessageInStatusBar("Please select a movie file by clicking on 'Open Movie'", MessageType::Normal);
+    showMessageInStatusBar("Please select a movie file by clicking on 'Open Movie'", MessageType::Info);
 
     // Call readConfigFile to initialize settings
     readConfigFile();
@@ -128,17 +129,24 @@ void MainWindow::showMessageInStatusBar(const QString &message, MessageType type
     // Create a new QLabel to display the message
     statusLabel = new QLabel(message);
 
-    // Set the color based on the message type
+    // Set the color based on the message type and theme
     QString color;
+    QPalette palette = QApplication::palette();
+    QColor windowColor = palette.color(QPalette::Window);
+    QColor textColor = palette.color(QPalette::WindowText);
+
+    // Determine if the theme is dark or light
+    bool isDarkTheme = (windowColor.value() < 128); // Brightness threshold (0-255 scale)
+
     switch (type) {
     case MessageType::Error:
-        color = "red";
+        color = isDarkTheme ? "lightcoral" : "red"; // Light coral for dark theme, red for light theme
         break;
     case MessageType::Warning:
-        color = "yellow";
+        color = isDarkTheme ? "gold" : "darkorange"; // Gold for dark theme, dark orange for light theme
         break;
-    case MessageType::Normal:
-        color = "black";
+    case MessageType::Info:
+        color = textColor.name(); // Use the text color from the theme
         break;
     }
 
@@ -189,13 +197,13 @@ void MainWindow::onOpenMovieButtonClick()
     ui->movieSearch->setText(searchText);
 
     // Display the status message
-    showMessageInStatusBar("Please press 'Search' button", MessageType::Normal);
+    showMessageInStatusBar("Please press 'Search' button", MessageType::Info);
 }
 
 void MainWindow::onSearchButtonClick()
 {
     // Display a status message to instruct the user
-    showMessageInStatusBar("Please select a movie from the list and press 'Write Tags' button", MessageType::Normal);
+    showMessageInStatusBar("Please select a movie from the list and press 'Write Tags' button", MessageType::Info);
 
     // Clear the selection and disable the 'Write Tags' button initially
     ui->searchResults->clearSelection();
@@ -218,6 +226,12 @@ void MainWindow::onSearchCompleted(const QJsonArray &results)
 
     // Disconnect any existing connections to avoid duplicate slots
     disconnect(tmdbClient, &TmdbClient::posterDownloaded, nullptr, nullptr);
+
+    if (results.isEmpty()) {
+        // No results found - update the status bar
+        showMessageInStatusBar("No movies found for the search criteria", MessageType::Warning);
+        return;
+    }
 
     for (const QJsonValue &resultValue : results) {
         QJsonObject result = resultValue.toObject();
@@ -273,68 +287,6 @@ void MainWindow::onSearchResultSelectionChanged()
     ui->btnWriteTags->setEnabled(!ui->searchResults->selectedItems().isEmpty());
 }
 
-bool MainWindow::writeMediaTags(const QString& filePath, const QPixmap& coverArt)
-{
-    // First save the cover art to a temporary file
-    QString tempCoverPath = QDir::temp().filePath("temp_cover.jpg");
-    if (!coverArt.save(tempCoverPath, "JPG")) {
-        showMessageInStatusBar("Failed to save temporary cover art", MessageType::Error);
-        return false;
-    }
-
-    // Prepare FFmpeg command based on file extension
-    QString fileExtension = QFileInfo(filePath).suffix().toLower();
-    QStringList arguments;
-
-    if (fileExtension == "mp4") {
-        // Command for MP4 files
-        arguments << "-i" << filePath
-                  << "-i" << tempCoverPath
-                  << "-map" << "0" << "-map" << "1"
-                  << "-c" << "copy"
-                  << "-c:v:1" << "mjpeg"
-                  << "-disposition:v:1" << "attached_pic"
-                  << QString("%1_tagged.mp4").arg(filePath.chopped(4));
-    }
-    else if (fileExtension == "mkv") {
-        // Command for MKV files
-        arguments << "-i" << filePath
-                  << "-i" << tempCoverPath
-                  << "-map" << "0" << "-map" << "1"
-                  << "-c" << "copy"
-                  << "-c:v:1" << "mjpeg"
-                  << "-disposition:v:1" << "attached_pic"
-                  << QString("%1_tagged.mkv").arg(filePath.chopped(4));
-    }
-    else {
-        showMessageInStatusBar("Unsupported file format", MessageType::Error);
-        return false;
-    }
-
-    // Create and configure FFmpeg process
-    ffmpegProcess = new QProcess(this);
-    connect(ffmpegProcess, &QProcess::errorOccurred, this, [this](QProcess::ProcessError error) {
-        showMessageInStatusBar(QString("FFmpeg error: %1").arg(error), MessageType::Error);
-    });
-
-    connect(ffmpegProcess, QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished),
-            this, [this, tempCoverPath](int exitCode, QProcess::ExitStatus exitStatus) {
-                if (exitCode == 0 && exitStatus == QProcess::NormalExit) {
-                    showMessageInStatusBar("Tags written successfully", MessageType::Normal);
-                } else {
-                    showMessageInStatusBar("Failed to write tags", MessageType::Error);
-                }
-
-                // Clean up temporary file
-                QFile::remove(tempCoverPath);
-                ffmpegProcess->deleteLater();
-            });
-
-    // Start FFmpeg process
-    ffmpegProcess->start("ffmpeg", arguments);
-    return true;
-}
-
 void MainWindow::onWriteTagsButtonClick()
 {
     QListWidgetItem* selectedItem = ui->searchResults->selectedItems().first();
@@ -343,9 +295,23 @@ void MainWindow::onWriteTagsButtonClick()
         );
 
     if (movieWidget) {
-        showMessageInStatusBar("Writing tags to file...", MessageType::Normal);
-        if (!writeMediaTags(movieFile, movieWidget->coverImage())) {
-            showMessageInStatusBar("Failed to start tag writing process", MessageType::Error);
-        }
+        MediaTagWriter* tagWriter = new MediaTagWriter(this);
+
+        connect(tagWriter, &MediaTagWriter::progressUpdate, this,
+                [this](const QString& message) {
+                    showMessageInStatusBar(message, MessageType::Info);
+                });
+
+        connect(tagWriter, &MediaTagWriter::error, this,
+                [this](const QString& message) {
+                    showMessageInStatusBar(message, MessageType::Error);
+                });
+
+        connect(tagWriter, &MediaTagWriter::success, this,
+                [this](const QString& message) {
+                    showMessageInStatusBar(message, MessageType::Info);
+                });
+
+        tagWriter->writeTagsToFile(movieFile, movieWidget->coverImage());
     }
 }

@@ -6,6 +6,12 @@ set(CMAKE_AUTORCC ON)
 # Add Network to the components list
 find_package(Qt6 6.5 REQUIRED COMPONENTS Core Widgets Network)
 
+# Add pkg-config support
+find_package(PkgConfig REQUIRED)
+
+# Find TagLib using pkg-config
+pkg_check_modules(TAGLIB REQUIRED IMPORTED_TARGET taglib)
+
 qt_standard_project_setup()
 
 # Path to the config file in the source directory
@@ -24,6 +30,7 @@ qt_add_executable(MovieTag
     movieitemwidget.h movieitemwidget.cpp
     resources.qrc
     tmdbclient.h tmdbclient.cpp
+    mediatagwriter.h mediatagwriter.cpp
 )
 
 target_link_libraries(MovieTag
@@ -31,6 +38,7 @@ target_link_libraries(MovieTag
         Qt::Core
         Qt::Widgets
         Qt::Network
+        PkgConfig::TAGLIB
 )
 
 # Enable C++17 (or later) if necessary
